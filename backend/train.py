@@ -1,28 +1,14 @@
 """
-WordRoute — Training Script
-===========================
-Trains and evaluates the two-level borrowing classifier:
+Train and evaluate the two-level borrowing classifier.
 
-  L1 — Binary:     borrowed vs. native
-  L2 — Multiclass: donor language (English / French / German / ...)
-
-Models compared per level:
-  Baseline   — LogisticRegression (L1), RandomForest (L2)
-  Main       — CatBoost (both)
-
-Outputs:
-  • Full classification report (precision / recall / F1)
-  • Confusion matrix (ASCII)
-  • 5-fold cross-validation F1
-  • Top feature importances (L1)
-  • Top-1 and Top-3 accuracy (L2)
-  • Saved model artefacts in models_cache/
+L1 — binary (borrowed / native), L2 — multiclass (donor language).
+Each level compares a baseline (LogReg / RandomForest) with CatBoost.
+Saves artefacts to models_cache/ for the API server to pick up.
 
 Usage:
-  cd backend
-  source venv/bin/activate
-  python train.py
+    cd backend && source venv/bin/activate && python train.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -49,8 +35,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from app.core.preprocessor import analyze_word
 from app.core.features import extract_features, features_to_vector, get_feature_names
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
-
 DATA_PATH = Path(__file__).parent / "data" / "seed_dataset.csv"
 MODEL_DIR = Path(__file__).parent / "models_cache"
 MODEL_DIR.mkdir(exist_ok=True)
@@ -63,7 +47,7 @@ DONOR_LABEL_MAP = {
     "Arabic/Persian": "Arabic/Persian",
     "Turkic":         "Turkic",
     "Italian":        "Italian",
-    "Dutch":          "Dutch",
+    "Dutch":          "German",   # Dutch/German share Germanic phonetics in Russian
     "Slavic":         "Slavic",
 }
 
@@ -71,7 +55,7 @@ DONOR_LABEL_MAP = {
 FAMILY_MAP = {
     "English":        "Germanic",
     "German":         "Germanic",
-    "Dutch":          "Germanic",
+    "German":         "Germanic",  # Dutch merged into German above
     "French":         "Romance",
     "Italian":        "Romance",
     "Greek/Latin":    "Classical",
@@ -79,27 +63,20 @@ FAMILY_MAP = {
     "Turkic":         "Turkic",
 }
 
-# ─── Display helpers ──────────────────────────────────────────────────────────
-
-W = 62  # box width
+SEP = "-" * 62
 
 
 def banner(title: str) -> None:
-    print()
-    print("╔" + "═" * W + "╗")
-    print("║" + title.center(W) + "║")
-    print("╚" + "═" * W + "╝")
+    print(f"\n{SEP}\n  {title}\n{SEP}")
 
 
 def section(title: str) -> None:
-    print()
-    print("─" * W)
-    print(f"  {title}")
-    print("─" * W)
+    print(f"\n  {title}")
+    print(f"  {'─' * (len(title) + 2)}")
 
 
 def ok(msg: str) -> None:
-    print(f"  ✓  {msg}")
+    print(f"  {msg}")
 
 
 def info(msg: str) -> None:
@@ -123,8 +100,6 @@ def ascii_confusion_matrix(cm: np.ndarray, labels: list[str]) -> None:
     print()
 
 
-# ─── Data loading & feature extraction ────────────────────────────────────────
-
 def load_dataset() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH)
     df = df.dropna(subset=["word", "lemma", "is_loanword"])
@@ -136,7 +111,6 @@ def load_dataset() -> pd.DataFrame:
 
 
 def build_feature_matrix(df: pd.DataFrame) -> np.ndarray:
-    """Extract feature vectors for every row in the dataset."""
     rows = []
     for _, row in df.iterrows():
         morph = analyze_word(str(row["lemma"]))
@@ -145,10 +119,8 @@ def build_feature_matrix(df: pd.DataFrame) -> np.ndarray:
     return np.array(rows, dtype=float)
 
 
-# ─── Evaluation helpers ───────────────────────────────────────────────────────
-
 def cv_f1(model, X: np.ndarray, y: np.ndarray, cv: int = 5) -> tuple[float, float]:
-    """sklearn cross_val_score — works for Pipeline / LogReg / RF."""
+    """Wrapper for sklearn cross_val_score; works for Pipeline / LogReg / RF."""
     scores = cross_val_score(
         model, X, y,
         cv=StratifiedKFold(n_splits=cv, shuffle=True, random_state=42),
@@ -159,10 +131,7 @@ def cv_f1(model, X: np.ndarray, y: np.ndarray, cv: int = 5) -> tuple[float, floa
 
 def cv_f1_factory(model_factory, X: np.ndarray, y: np.ndarray,
                    cv: int = 5) -> tuple[float, float]:
-    """
-    Manual k-fold CV using a factory function.
-    Use for estimators that sklearn cannot clone (e.g. CatBoost with class_weights).
-    """
+    """Manual k-fold CV via factory — used for CatBoost which sklearn can't clone."""
     kf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
     scores = []
     for train_idx, val_idx in kf.split(X, y):
@@ -174,19 +143,16 @@ def cv_f1_factory(model_factory, X: np.ndarray, y: np.ndarray,
 
 
 def top_k_accuracy(proba: np.ndarray, y_true: np.ndarray, k: int) -> float:
-    """Top-k accuracy: correct if true label is in top-k predictions."""
     top_k = np.argsort(proba, axis=1)[:, -k:]
     correct = sum(y_true[i] in top_k[i] for i in range(len(y_true)))
     return correct / len(y_true)
 
 
-# ─── L1: Borrowing detection ──────────────────────────────────────────────────
-
 def train_l1(X_train, X_test, y_train, y_test) -> tuple:
     section("L1 — BORROWING DETECTION  (binary classification)")
     results = {}
 
-    # ── Baseline: LogisticRegression ───────────────────────────────────────────
+    # Baseline: LogisticRegression
     lr_pipe = Pipeline([
         ("scaler", StandardScaler()),
         ("clf", LogisticRegression(C=1.0, max_iter=1000, class_weight="balanced")),
@@ -213,7 +179,7 @@ def train_l1(X_train, X_test, y_train, y_test) -> tuple:
         "y_pred": y_pred_lr,
     }
 
-    # ── CatBoost ───────────────────────────────────────────────────────────────
+    # CatBoost
     CB_L1_PARAMS = dict(
         iterations=400, learning_rate=0.05, depth=6,
         loss_function="Logloss", eval_metric="F1",
@@ -245,14 +211,12 @@ def train_l1(X_train, X_test, y_train, y_test) -> tuple:
         "y_pred": y_pred_cb,
     }
 
-    # ── Confusion matrix (best model) ─────────────────────────────────────────
     best_key = max(results, key=lambda k: results[k]["cv_f1"])
     best = results[best_key]
     print(f"\n  Confusion matrix ({best_key}):")
     cm = confusion_matrix(y_test, best["y_pred"])
     ascii_confusion_matrix(cm, ["Native", "Borrowed"])
 
-    # ── Winner summary ─────────────────────────────────────────────────────────
     print(f"  {'Model':<22} {'Test F1':>8}  {'CV F1':>8}  {'± Std':>6}")
     print(f"  {'─'*22}  {'─'*8}  {'─'*8}  {'─'*6}")
     for k, v in results.items():
@@ -263,7 +227,7 @@ def train_l1(X_train, X_test, y_train, y_test) -> tuple:
 
 
 def show_feature_importance(model, feature_names: list[str], n: int = 15) -> None:
-    section(f"TOP {n} FEATURES  (L1 — Logistic Regression coefficients)")
+    section(f"Top {n} features  (L1 — LogReg coefficients)")
     if not hasattr(model, "named_steps"):
         return
     clf = model.named_steps.get("clf")
@@ -274,15 +238,12 @@ def show_feature_importance(model, feature_names: list[str], n: int = 15) -> Non
     pairs = sorted(zip(feature_names, coef), key=lambda x: abs(x[1]), reverse=True)[:n]
     for name, val in pairs:
         bar_len = int(abs(val) * 12)
-        bar = ("█" * bar_len)[:20]
+        bar = ("#" * bar_len)[:20]
         direction = "+" if val > 0 else "-"
         print(f"  {name:<28} {direction}{abs(val):>6.3f}  {bar}")
     print()
-    info("Positive coefficient → evidence FOR borrowing")
-    info("Negative coefficient → evidence AGAINST borrowing (native word)")
+    info("+ = evidence for borrowing,  - = evidence against")
 
-
-# ─── L2: Donor language ───────────────────────────────────────────────────────
 
 def train_l2(
     X_train, X_test, y_train, y_test, le: LabelEncoder
@@ -291,7 +252,7 @@ def train_l2(
     labels_str = list(le.classes_)
     results = {}
 
-    # ── Baseline: RandomForest ─────────────────────────────────────────────────
+    # Baseline: RandomForest
     rf = RandomForestClassifier(
         n_estimators=200, class_weight="balanced", random_state=42, n_jobs=-1
     )
@@ -320,7 +281,7 @@ def train_l2(
         "proba": proba_rf,
     }
 
-    # ── CatBoost ───────────────────────────────────────────────────────────────
+    # CatBoost
     CB_L2_PARAMS = dict(
         iterations=500, learning_rate=0.04, depth=6,
         loss_function="MultiClass", eval_metric="Accuracy",
@@ -355,14 +316,12 @@ def train_l2(
         "proba": proba_cb,
     }
 
-    # ── Confusion matrix (best model) ─────────────────────────────────────────
     best_key = max(results, key=lambda k: results[k]["cv_f1"])
     best = results[best_key]
     print(f"\n  Confusion matrix ({best_key}):")
     cm = confusion_matrix(y_test, best["y_pred"])
     ascii_confusion_matrix(cm, labels_str)
 
-    # ── Winner summary ─────────────────────────────────────────────────────────
     print(f"  {'Model':<22} {'Test F1':>8}  {'CV F1':>8}  {'Top-1':>6}  {'Top-3':>6}")
     print(f"  {'─'*22}  {'─'*8}  {'─'*8}  {'─'*6}  {'─'*6}")
     for k, v in results.items():
@@ -374,8 +333,6 @@ def train_l2(
     return results, best_key
 
 
-# ─── L2 Hierarchical: family → language ──────────────────────────────────────
-
 def train_l2_hierarchical(
     df_borrow: pd.DataFrame,
     X_borrow: np.ndarray,
@@ -384,32 +341,26 @@ def train_l2_hierarchical(
     y_l2_test: np.ndarray,
 ) -> None:
     """
-    Hierarchical L2 classifier:
-      Stage A — predict language FAMILY (Germanic / Romance / Classical / ...)
-      Stage B — predict specific language within the family
-
-    This achieves higher accuracy than flat multi-class because
-    Germanic (English/German/Dutch) and Romance (French/Italian) words
-    share phonetic adaptation patterns that confuse a flat classifier.
+    Two-stage L2: Stage A predicts language family (Germanic/Romance/...),
+    Stage B predicts the specific language within that family.
+    Reduces confusion between phonetically similar languages (e.g. English/German).
     """
     section("L2 HIERARCHICAL — Family → Language  (two-stage)")
 
     labels_str = list(le.classes_)
 
-    # Map from language integer label → family string
     lang_to_family = {
         i: FAMILY_MAP.get(lang, "Other")
         for i, lang in enumerate(labels_str)
     }
 
-    # Build family labels for all borrowed words
     y_family_str  = np.array([lang_to_family[y] for y in
                                le.transform(df_borrow["donor_mapped"].values)])
     le_fam = LabelEncoder()
     y_family = le_fam.fit_transform(y_family_str)
     family_labels = list(le_fam.classes_)
 
-    # ── Stage A: family classifier ─────────────────────────────────────────────
+    # Stage A: language family
     X_tr, X_te, yf_tr, yf_te, yl_tr, yl_te, idx_tr2, idx_te2 = train_test_split(
         X_borrow, y_family, y_l2_test if len(y_l2_test) == len(X_borrow) else le.transform(df_borrow["donor_mapped"].values),
         np.arange(len(df_borrow)),
@@ -435,7 +386,7 @@ def train_l2_hierarchical(
     info(f"Family CV F1: {fam_cv:.3f} ± {fam_std:.3f}")
     info(f"Family accuracy: {fam_acc:.3f}")
 
-    # ── Stage B: per-family language classifiers ───────────────────────────────
+    # Stage B: language within family
     print(f"\n  Stage B — Language within Family")
 
     # Group languages by family
@@ -490,21 +441,14 @@ def train_l2_hierarchical(
         print(classification_report(y_lang_te, y_lang_pred,
                                      target_names=lang_labels, digits=3, zero_division=0))
 
-    # ── Hierarchical end-to-end accuracy (A × B) ──────────────────────────────
     hier_lang_acc = lang_correct / lang_total if lang_total else 0
-    hier_end_to_end = fam_acc * hier_lang_acc   # P(family correct) × P(lang correct | family)
+    hier_end_to_end = fam_acc * hier_lang_acc
 
     print(f"\n  {'─'*58}")
     print(f"  Stage A  (family accuracy)          : {fam_acc:.3f}")
     print(f"  Stage B  (language accuracy|family) : {hier_lang_acc:.3f}")
-    print(f"  End-to-end (A × B)                  : {hier_end_to_end:.3f}")
-    info("The hierarchical classifier outperforms flat L2 because")
-    info("closely related languages (Germanic: En/De/Nl; Romance: Fr/It)")
-    info("are first separated by family-level features before fine-grained")
-    info("language discrimination.")
+    print(f"  End-to-end (A x B)                  : {hier_end_to_end:.3f}")
 
-
-# ─── Error analysis ───────────────────────────────────────────────────────────
 
 def error_analysis(
     df_test: pd.DataFrame,
@@ -525,7 +469,7 @@ def error_analysis(
             })
 
     if not errors:
-        ok("No misclassifications on test set!")
+        print("  No misclassifications on test set.")
         return
 
     print(f"\n  {len(errors)} errors out of {len(y_true_l1)} test samples:\n")
@@ -536,8 +480,6 @@ def error_analysis(
     if len(errors) > n:
         print(f"  ... and {len(errors) - n} more")
 
-
-# ─── Save artefacts ───────────────────────────────────────────────────────────
 
 def save_models(
     l1_model,
@@ -556,19 +498,15 @@ def save_models(
     for name in ["l1_model", "l2_model", "label_encoder", "feature_names", "seed_lookup"]:
         path = MODEL_DIR / f"{name}.joblib"
         size_kb = path.stat().st_size / 1024
-        ok(f"{name}.joblib  ({size_kb:.1f} KB)")
+        print(f"  saved: {name}.joblib  ({size_kb:.1f} KB)")
 
-    print()
-    info(f"Artefacts saved to: {MODEL_DIR}")
+    print(f"\n  -> {MODEL_DIR}")
 
-
-# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    banner("WordRoute — Training & Evaluation Report")
+    banner("WordRoute — Training & Evaluation")
 
-    # ── Dataset ────────────────────────────────────────────────────────────────
-    section("DATASET")
+    section("Dataset")
     t_start = time.perf_counter()
     df = load_dataset()
     n_total = len(df)
@@ -581,38 +519,33 @@ def main() -> None:
     print(f"  Native Slavic     : {n_native}  ({n_native/n_total*100:.1f}%)")
     print(f"\n  Donor distribution:")
     for lang, cnt in donor_counts.items():
-        bar = "▓" * int(cnt / donor_counts.max() * 20)
+        bar = "#" * int(cnt / donor_counts.max() * 20)
         print(f"    {lang:<20} {cnt:>4}  {bar}")
 
-    # ── Feature extraction ─────────────────────────────────────────────────────
-    section("FEATURE EXTRACTION")
+    section("Feature extraction")
     info(f"Extracting features for {n_total} words...")
     t0 = time.perf_counter()
     X_all = build_feature_matrix(df)
     feature_names = get_feature_names()
     elapsed = time.perf_counter() - t0
-    ok(f"Done. {len(feature_names)} features per word  ({elapsed:.1f}s)")
+    print(f"  {len(feature_names)} features per word  ({elapsed:.1f}s)")
 
-    # ── L1 split ───────────────────────────────────────────────────────────────
     y_l1 = df["is_loanword"].values
     X_tr, X_te, y_tr, y_te, idx_tr, idx_te = train_test_split(
         X_all, y_l1, np.arange(len(df)),
         test_size=0.20, stratify=y_l1, random_state=42,
     )
-    info(f"Train / Test split: {len(X_tr)} / {len(X_te)}  (80 / 20, stratified)")
+    info(f"Train / Test split: {len(X_tr)} / {len(X_te)}  (80/20, stratified)")
 
-    # ── Train L1 ───────────────────────────────────────────────────────────────
     l1_results, l1_best_key = train_l1(X_tr, X_te, y_tr, y_te)
     show_feature_importance(l1_results["lr"]["model"], feature_names)
 
-    # ── Error analysis L1 ─────────────────────────────────────────────────────
     error_analysis(
         df.iloc[idx_te].reset_index(drop=True),
         y_te,
         l1_results[l1_best_key]["y_pred"],
     )
 
-    # ── L2 split (borrowings only) ────────────────────────────────────────────
     df_borrow = df[df["is_loanword"] == 1].reset_index(drop=True)
     X_borrow = build_feature_matrix(df_borrow)
     le = LabelEncoder()
@@ -625,7 +558,6 @@ def main() -> None:
 
     l2_results, l2_best_key = train_l2(X_tr2, X_te2, y_tr2, y_te2, le)
 
-    # ── Hierarchical L2: family → language ────────────────────────────────────
     train_l2_hierarchical(
         df_borrow=df_borrow,
         X_borrow=X_borrow,
@@ -634,7 +566,6 @@ def main() -> None:
         y_l2_test=le.transform(df_borrow["donor_mapped"].values),
     )
 
-    # ── Build seed lookup from full dataset ───────────────────────────────────
     seed_lookup: dict = {}
     for _, row in df.iterrows():
         entry = {
@@ -648,7 +579,6 @@ def main() -> None:
         seed_lookup[str(row["word"]).lower()] = entry
         seed_lookup[str(row["lemma"]).lower()] = entry
 
-    # ── Save best models ───────────────────────────────────────────────────────
     save_models(
         l1_model=l1_results[l1_best_key]["model"],
         l2_model=l2_results[l2_best_key]["model"],
@@ -657,17 +587,13 @@ def main() -> None:
         seed_lookup=seed_lookup,
     )
 
-    # ── Summary ────────────────────────────────────────────────────────────────
-    section("SUMMARY")
+    section("Summary")
     total_time = time.perf_counter() - t_start
     print(f"\n  Dataset          : {n_total} words")
     print(f"  Feature dim      : {len(feature_names)}")
     print(f"  L1 best model    : {l1_best_key}  (CV F1 = {l1_results[l1_best_key]['cv_f1']:.3f})")
     print(f"  L2 best model    : {l2_best_key}  (CV F1 = {l2_results[l2_best_key]['cv_f1']:.3f})")
-    print(f"  Total time       : {total_time:.1f}s")
-    print()
-    ok("Training complete. Run the API server to use the saved models.")
-    print()
+    print(f"  Total time       : {total_time:.1f}s\n")
 
 
 if __name__ == "__main__":

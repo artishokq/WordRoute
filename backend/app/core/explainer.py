@@ -1,5 +1,4 @@
 """Rule-based explanation generator for borrowing predictions."""
-from __future__ import annotations
 
 SUFFIX_EXPLANATIONS = {
     "sfx_ing": "содержит суффикс -инг (характерен для английских заимствований)",
@@ -66,27 +65,20 @@ def generate_explanation(
     source_word: str,
     in_seed: bool,
 ) -> list[str]:
-    """
-    Build a human-readable list of reasons for the borrowing prediction.
-    """
     reasons: list[str] = []
 
     if not feats:
         return ["недостаточно данных для объяснения"]
 
-    # ── suffix / pattern evidence ──────────────────────────────────────────────
     for key, explanation in SUFFIX_EXPLANATIONS.items():
         if feats.get(key, 0) == 1:
             reasons.append(explanation)
 
-    # ── letter pattern evidence ────────────────────────────────────────────────
     for key, explanation in LETTER_EXPLANATIONS.items():
         if feats.get(key, 0) == 1:
             reasons.append(explanation)
 
-    # ── Levenshtein proximity ──────────────────────────────────────────────────
     lev_key = f"lev_{donor_language.lower().replace('/', '_').replace(' ', '_')}"
-    # Map donor to feature key
     lang_key_map = {
         "English": "lev_english",
         "French": "lev_french",
@@ -104,7 +96,6 @@ def generate_explanation(
     if source_word:
         reasons.append(f"близко к слову в языке-доноре: «{source_word}»")
 
-    # ── morphological evidence ─────────────────────────────────────────────────
     if not feats.get("is_declinable", 1):
         reasons.append(MORPHO_EXPLANATIONS["is_declinable_false"])
     if feats.get("gender_neut", 0) and not feats.get("is_declinable", 1):
@@ -112,17 +103,15 @@ def generate_explanation(
     if not feats.get("is_known", 1):
         reasons.append(MORPHO_EXPLANATIONS["is_known_false"])
 
-    # ── fallback for native words ──────────────────────────────────────────────
     if loanword_prob < 0.4 and not reasons:
         reasons.append("слово не содержит характерных маркеров заимствования")
         reasons.append("соответствует типичной фонетической структуре исконной лексики")
         reasons.append("хорошо вписано в русскую морфологию")
 
-    # ── source database note ───────────────────────────────────────────────────
     if in_seed:
         reasons.append("слово найдено в эталонной базе данных (Wiktionary/WOLD)")
 
-    return reasons[:7]  # cap at 7 reasons
+    return reasons[:7]
 
 
 def get_semantic_domain_label(domain: str) -> str:

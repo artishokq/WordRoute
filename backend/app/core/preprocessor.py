@@ -1,4 +1,4 @@
-"""Russian morphological preprocessor using pymorphy2."""
+"""Russian morphological preprocessing using pymorphy3."""
 import re
 import pymorphy3
 
@@ -19,7 +19,6 @@ VOWELS = set("аеёиоуыэюя")
 
 
 def transliterate(word: str) -> str:
-    """Transliterate Russian word to approximate Latin form."""
     table = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d",
         "е": "e", "ё": "yo", "ж": "zh", "з": "z", "и": "i",
@@ -37,7 +36,6 @@ def count_vowels(word: str) -> int:
 
 
 def analyze_word(word: str) -> dict:
-    """Return pymorphy2 morphological analysis for a word."""
     parses = morph.parse(word)
     if not parses:
         return {"lemma": word, "POS": "UNKN", "is_known": False, "declinable": True}
@@ -51,7 +49,6 @@ def analyze_word(word: str) -> dict:
     case = str(tag.case) if tag.case else None
     animacy = str(tag.animacy) if tag.animacy else None
 
-    # Check declinability: if word has no inflection forms it's likely indeclinable
     forms = {f.word for f in best.lexeme}
     declinable = len(forms) > 1
 
@@ -69,16 +66,11 @@ def analyze_word(word: str) -> dict:
 
 
 def tokenize(text: str) -> list[str]:
-    """Extract Russian word tokens from text."""
     tokens = re.findall(r"[а-яёА-ЯЁ]+(?:-[а-яёА-ЯЁ]+)*", text)
     return [t.lower() for t in tokens if len(t) >= 2]
 
 
 def preprocess_text(text: str, keep_all_pos: bool = False) -> list[dict]:
-    """
-    Full preprocessing pipeline for Russian text.
-    Returns list of token dicts with morphological info.
-    """
     tokens = tokenize(text)
     results = []
     seen_lemmas: set[str] = set()
@@ -104,7 +96,6 @@ def preprocess_text(text: str, keep_all_pos: bool = False) -> list[dict]:
 
 
 def preprocess_word(word: str) -> dict:
-    """Preprocess a single word and return full morphological info."""
     word = word.strip().lower()
     info = analyze_word(word)
     info["token"] = word

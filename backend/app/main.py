@@ -1,5 +1,4 @@
-"""WordRoute FastAPI application entry point."""
-from __future__ import annotations
+"""WordRoute FastAPI application."""
 import sys
 from pathlib import Path
 
@@ -31,10 +30,9 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup():
-    """Pre-train the classifier on startup."""
-    print("[startup] Training classifier on seed dataset...")
+    print("[startup] loading classifier...")
     clf = get_classifier()
-    print(f"[startup] Classifier ready. Trained: {clf.trained}")
+    print(f"[startup] ready, trained={clf.trained}")
 
 
 @app.get("/")

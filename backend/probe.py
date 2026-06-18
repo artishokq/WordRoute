@@ -1,26 +1,14 @@
 """
-WordRoute — Probing Experiment
-==============================
-Research question:
-  Do multilingual embeddings (paraphrase-multilingual-MiniLM-L12-v2)
-  encode information about the borrowing status of Russian words?
+Probing experiment: do multilingual embeddings carry borrowing signal?
 
-Method:
-  1. Extract embeddings for all words in the seed dataset
-  2. Train a linear probe (LogisticRegression) on those embeddings
-  3. Compare probe F1 vs. manual-features F1 (from train.py results)
-  4. Visualise embedding space: PCA projection coloured by borrowing status
-
-Findings expected:
-  • If probe F1 ≈ manual F1 → embeddings encode the borrowing signal well
-  • If probe F1 << manual F1 → manual features capture unique information
-  • Mid-case (most likely) → embeddings partially encode origin
+Trains a linear probe (LogReg) on paraphrase-multilingual-MiniLM-L12-v2
+embeddings and compares it against manual linguistic features.
+Also produces PCA plots of the embedding space.
 
 Usage:
-  cd backend
-  source venv/bin/activate
-  python probe.py                # downloads model on first run (~120 MB)
-  python probe.py --no-plot      # skip matplotlib output
+    cd backend && source venv/bin/activate
+    python probe.py            # downloads model on first run (~120 MB)
+    python probe.py --no-plot  # skip matplotlib output
 """
 from __future__ import annotations
 
@@ -42,14 +30,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from app.core.preprocessor import analyze_word
 from app.core.features import extract_features, features_to_vector
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-
-DATA_PATH   = Path(__file__).parent / "data" / "seed_dataset.csv"
-CACHE_DIR   = Path(__file__).parent / "models_cache"
-EMB_CACHE   = CACHE_DIR / "probe_embeddings.npy"
-
-# Multilingual model — ~120 MB, excellent Russian support
-MODEL_NAME  = "paraphrase-multilingual-MiniLM-L12-v2"
+DATA_PATH  = Path(__file__).parent / "data" / "seed_dataset.csv"
+CACHE_DIR  = Path(__file__).parent / "models_cache"
+EMB_CACHE  = CACHE_DIR / "probe_embeddings.npy"
+MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"  # ~120 MB, good Russian support
 
 DONOR_LABEL_MAP = {
     "English": "English",
@@ -63,32 +47,25 @@ DONOR_LABEL_MAP = {
     "Slavic": "Slavic",
 }
 
-W = 62
+SEP = "-" * 62
 
 
 def banner(title: str) -> None:
-    print()
-    print("╔" + "═" * W + "╗")
-    print("║" + title.center(W) + "║")
-    print("╚" + "═" * W + "╝")
+    print(f"\n{SEP}\n  {title}\n{SEP}")
 
 
 def section(title: str) -> None:
-    print()
-    print("─" * W)
-    print(f"  {title}")
-    print("─" * W)
+    print(f"\n  {title}")
+    print(f"  {'─' * (len(title) + 2)}")
 
 
 def ok(msg: str) -> None:
-    print(f"  ✓  {msg}")
+    print(f"  {msg}")
 
 
 def info(msg: str) -> None:
     print(f"     {msg}")
 
-
-# ─── Load data ────────────────────────────────────────────────────────────────
 
 def load_dataset() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH)
@@ -100,39 +77,30 @@ def load_dataset() -> pd.DataFrame:
     return df
 
 
-# ─── Embeddings ───────────────────────────────────────────────────────────────
-
 def get_embeddings(words: list[str], force_recompute: bool = False) -> np.ndarray:
-    """
-    Get sentence-transformer embeddings for a list of words.
-    Caches result to disk to avoid repeated downloads and slow inference.
-    """
+    """Load cached embeddings or compute them with the sentence transformer."""
     CACHE_DIR.mkdir(exist_ok=True)
     cache_key = CACHE_DIR / f"probe_embeddings_{len(words)}.npy"
 
     if cache_key.exists() and not force_recompute:
         embs = np.load(cache_key)
-        ok(f"Loaded embeddings from cache  ({embs.shape})")
+        print(f"  embeddings loaded from cache  {embs.shape}")
         return embs
 
-    info(f"Loading model: {MODEL_NAME}  (first run downloads ~120 MB)")
+    info(f"Loading model: {MODEL_NAME}")
     t0 = time.perf_counter()
     model = SentenceTransformer(MODEL_NAME)
-    elapsed = time.perf_counter() - t0
-    info(f"Model loaded in {elapsed:.1f}s")
+    info(f"Model loaded in {time.perf_counter()-t0:.1f}s")
 
     info(f"Encoding {len(words)} words...")
     t0 = time.perf_counter()
     embs = model.encode(words, batch_size=64, show_progress_bar=False)
-    elapsed = time.perf_counter() - t0
-    ok(f"Embeddings computed in {elapsed:.1f}s  shape={embs.shape}")
+    print(f"  embeddings ready in {time.perf_counter()-t0:.1f}s  shape={embs.shape}")
 
     np.save(cache_key, embs)
-    ok(f"Cached to {cache_key.name}")
+    info(f"cached to {cache_key.name}")
     return embs
 
-
-# ─── Manual features ─────────────────────────────────────────────────────────
 
 def get_manual_features(df: pd.DataFrame) -> np.ndarray:
     rows = []
@@ -143,18 +111,8 @@ def get_manual_features(df: pd.DataFrame) -> np.ndarray:
     return np.array(rows, dtype=float)
 
 
-# ─── Probing ─────────────────────────────────────────────────────────────────
-
-def probe(
-    X: np.ndarray,
-    y: np.ndarray,
-    label: str,
-    n_splits: int = 5,
-) -> dict:
-    """
-    Train a linear probe on X → y using stratified k-fold CV.
-    Returns CV F1 mean/std and a fitted probe on the full data.
-    """
+def probe(X: np.ndarray, y: np.ndarray, label: str, n_splits: int = 5) -> dict:
+    """Linear probe with stratified k-fold CV. Returns F1 stats and fitted model."""
     pipe = LogisticRegression(C=0.5, max_iter=1000, class_weight="balanced")
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -172,20 +130,17 @@ def probe(
     }
 
 
-# ─── PCA Visualisation ───────────────────────────────────────────────────────
-
 def plot_pca(
     embs: np.ndarray,
     is_loanword: np.ndarray,
     donor_labels: np.ndarray,
     words: list[str],
 ) -> None:
-    """Project embeddings to 2D via PCA and save two plots."""
     try:
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
     except ImportError:
-        info("matplotlib not installed — skipping plot")
+        print("  matplotlib not installed, skipping plots")
         return
 
     pca = PCA(n_components=2, random_state=42)
@@ -194,7 +149,6 @@ def plot_pca(
 
     CACHE_DIR.mkdir(exist_ok=True)
 
-    # ── Plot 1: native vs borrowed ─────────────────────────────────────────────
     fig, ax = plt.subplots(figsize=(9, 6))
     colors = ["#6b7280" if l == 0 else "#4f8ef7" for l in is_loanword]
     ax.scatter(coords[:, 0], coords[:, 1], c=colors, alpha=0.65, s=35, linewidths=0)
@@ -221,9 +175,8 @@ def plot_pca(
     out1 = CACHE_DIR / "probe_pca_binary.png"
     fig.savefig(out1, dpi=150)
     plt.close(fig)
-    ok(f"Plot saved: {out1}")
+    print(f"  plot saved: {out1}")
 
-    # ── Plot 2: coloured by donor language ─────────────────────────────────────
     DONOR_COLORS = {
         "English":        "#4f8ef7",
         "French":         "#a78bfa",
@@ -252,16 +205,13 @@ def plot_pca(
     out2 = CACHE_DIR / "probe_pca_donor.png"
     fig.savefig(out2, dpi=150)
     plt.close(fig)
-    ok(f"Plot saved: {out2}")
+    print(f"  plot saved: {out2}")
 
-
-# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main(show_plot: bool = True) -> None:
     banner("WordRoute — Probing Experiment")
 
-    # ── Data ───────────────────────────────────────────────────────────────────
-    section("DATASET")
+    section("Dataset")
     df = load_dataset()
     words = df["lemma"].tolist()
     y_binary = df["is_loanword"].values
@@ -273,21 +223,17 @@ def main(show_plot: bool = True) -> None:
     info(f"Borrowed    : {y_binary.sum()}  ({y_binary.mean()*100:.1f}%)")
     info(f"Native      : {(1-y_binary).sum()}  ({(1-y_binary).mean()*100:.1f}%)")
 
-    # ── Embeddings ─────────────────────────────────────────────────────────────
-    section("MULTILINGUAL EMBEDDINGS")
-    info(f"Model: {MODEL_NAME}")
+    section(f"Embeddings  ({MODEL_NAME})")
     embs = get_embeddings(words)
-    info(f"Embedding dim: {embs.shape[1]}")
+    info(f"dim: {embs.shape[1]}")
 
-    # ── Manual features ───────────────────────────────────────────────────────
-    section("MANUAL FEATURES  (handcrafted NLP features)")
+    section("Manual features")
     info("Extracting linguistic features for all words...")
     t0 = time.perf_counter()
     X_manual = get_manual_features(df)
-    info(f"Done in {time.perf_counter()-t0:.1f}s  shape={X_manual.shape}")
+    info(f"done in {time.perf_counter()-t0:.1f}s  shape={X_manual.shape}")
 
-    # ── Probing: L1 (binary) ──────────────────────────────────────────────────
-    section("PROBING — L1: Borrowed vs. Native")
+    section("Probing — L1: Borrowed vs. Native")
 
     r_emb_l1  = probe(embs,     y_binary, label="Embeddings")
     r_man_l1  = probe(X_manual, y_binary, label="Manual features")
@@ -304,10 +250,9 @@ def main(show_plot: bool = True) -> None:
             marker = " ← best"
         print(f"  {r['label']:<26} {r['f1_mean']:>18.3f}  {r['f1_std']:>6.3f}{marker}")
 
-    # ── Probing: L2 (donor language) ──────────────────────────────────────────
-    section("PROBING — L2: Donor Language")
+    section("Probing — L2: Donor Language")
 
-    # Only borrowings for L2
+    # only borrowed words for L2
     borrow_mask = y_binary == 1
     embs_b    = embs[borrow_mask]
     manual_b  = X_manual[borrow_mask]
@@ -326,40 +271,30 @@ def main(show_plot: bool = True) -> None:
             marker = " ← best"
         print(f"  {r['label']:<26} {r['f1_mean']:>18.3f}  {r['f1_std']:>6.3f}{marker}")
 
-    # ── Interpretation ────────────────────────────────────────────────────────
-    section("INTERPRETATION")
+    section("Interpretation")
 
     delta_l1 = r_emb_l1["f1_mean"] - r_man_l1["f1_mean"]
     delta_l2 = r_emb_l2["f1_mean"] - r_man_l2["f1_mean"]
 
     def interpret(delta: float, task: str) -> str:
         if delta > 0.05:
-            return f"  [{task}]  Embeddings outperform manual features → model encodes borrowing signal"
+            return f"  [{task}]  embeddings > manual features"
         elif delta < -0.05:
-            return f"  [{task}]  Manual features outperform embeddings → handcrafted features are superior"
+            return f"  [{task}]  manual features > embeddings"
         else:
-            return f"  [{task}]  Comparable performance → complementary information sources"
+            return f"  [{task}]  comparable performance (complementary)"
 
     print()
     print(interpret(delta_l1, "L1 binary"))
     print(interpret(delta_l2, "L2 donor "))
     print()
-    info(f"L1 Δ(emb - manual) = {delta_l1:+.3f}")
-    info(f"L2 Δ(emb - manual) = {delta_l2:+.3f}")
-    info("")
-    info("Combined model (Embeddings + Manual) is typically best because")
-    info("the two feature types carry complementary linguistic information.")
-    info("This supports the probing hypothesis: multilingual embeddings")
-    info("do partially encode word origin, but handcrafted morpho-phonetic")
-    info("features still add independent discriminative signal.")
+    info(f"L1 delta(emb - manual) = {delta_l1:+.3f}")
+    info(f"L2 delta(emb - manual) = {delta_l2:+.3f}")
 
-    # ── PCA visualisation ─────────────────────────────────────────────────────
     if show_plot:
-        section("PCA VISUALISATION")
+        section("PCA visualisation")
         plot_pca(embs, y_binary, y_donor_str, words)
 
-    print()
-    ok("Probing experiment complete.")
     print()
 
 

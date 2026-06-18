@@ -5,7 +5,6 @@ import type { AnalysisMode } from "../../lib/types";
 const EXAMPLES = {
   word: "маркетинг, компьютер, базар, философия",
   text: "В офисе обсуждали маркетинг и новый дизайн сайта. Менеджер предложил провести брифинг с инвесторами.",
-  batch: "компьютер\nмаркетинг\nресторан\nфутбол\nокно\nлес",
 };
 
 interface Props {
@@ -27,20 +26,18 @@ export default function InputForm({ onSubmit, loading }: Props) {
   const modeLabels: Record<AnalysisMode, string> = {
     word: "Слово / список",
     text: "Текст",
-    batch: "Batch",
   };
 
   const modeHints: Record<AnalysisMode, string> = {
     word: "Введите одно слово или несколько через запятую",
-    text: "Вставьте любой русский текст — система найдёт все потенциальные заимствования",
-    batch: "Введите слова по одному на строке",
+    text: "Вставьте любой русский текст – система найдёт все потенциальные заимствования",
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Mode selector */}
       <div className="flex gap-2">
-        {(["word", "text", "batch"] as AnalysisMode[]).map((m) => (
+        {(["word", "text"] as AnalysisMode[]).map((m) => (
           <button
             key={m}
             type="button"
@@ -66,7 +63,7 @@ export default function InputForm({ onSubmit, loading }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={modeHints[mode]}
-          rows={mode === "batch" ? 6 : mode === "text" ? 5 : 2}
+          rows={mode === "text" ? 5 : 2}
           className="w-full px-4 py-3 resize-none bg-transparent outline-none text-sm leading-relaxed"
           style={{ color: "var(--text-primary)" }}
         />
@@ -107,7 +104,7 @@ export default function InputForm({ onSubmit, loading }: Props) {
             Анализируем...
           </span>
         ) : (
-          "Analyze borrowings"
+          "Найти заимствования"
         )}
       </button>
     </form>

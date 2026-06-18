@@ -1,25 +1,12 @@
 """
-WordRoute — Dataset Builder via Russian Wiktionary API
-======================================================
-Fetches Russian words grouped by donor language from ru.wiktionary.org
-categories, normalises them with pymorphy3, and merges into seed_dataset.csv.
-
-How it works:
-  1. For each donor language, tries multiple Wiktionary category names
-     (categories vary across Wiktionary versions)
-  2. Fetches page titles from each working category (paginated API)
-  3. Filters out proper nouns, phrases, abbreviations, etc.
-  4. Runs pymorphy3 to confirm each word is a real lemma
-  5. Native Slavic words are taken from the Swadesh list (authoritative)
-  6. Merges with the existing seed_dataset.csv (no duplicates)
-  7. Backs up the original before writing
+Expand seed_dataset.csv by fetching words from English Wiktionary etymology
+categories. Uses pymorphy3 for lemma validation and backs up the original file.
 
 Usage:
-    cd backend
-    source venv/bin/activate
+    cd backend && source venv/bin/activate
     python build_dataset.py              # up to 350 words per donor language
-    python build_dataset.py --limit 50   # quick test (fewer words)
-    python build_dataset.py --dry-run    # preview stats without saving
+    python build_dataset.py --limit 50   # quick test run
+    python build_dataset.py --dry-run    # preview without saving
 """
 from __future__ import annotations
 
@@ -35,18 +22,13 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent))
 from app.core.preprocessor import analyze_word
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
-
 DATA_PATH   = Path(__file__).parent / "data" / "seed_dataset.csv"
 BACKUP_PATH = Path(__file__).parent / "data" / "seed_dataset.backup.csv"
 
-# ─── Wiktionary API ───────────────────────────────────────────────────────────
-
 WIKI_API      = "https://en.wiktionary.org/w/api.php"
-REQUEST_DELAY = 2.0    # seconds — conservative to avoid 429s
+REQUEST_DELAY = 2.0   # conservative — avoids 429 from Wiktionary
 MAX_RETRIES   = 4
 
-# English Wiktionary has well-structured etymology categories for Russian words
 CATEGORY_GROUPS: dict[str, list[str]] = {
     "English":        ["Russian terms derived from English"],
     "French":         ["Russian terms derived from French"],
@@ -61,7 +43,6 @@ CATEGORY_GROUPS: dict[str, list[str]] = {
     "Dutch":          ["Russian terms derived from Dutch"],
 }
 
-# Wiktionary categories for native (inherited) Slavic words
 NATIVE_CATEGORIES: list[str] = [
     "Russian terms inherited from Proto-Slavic",
     "Russian terms inherited from Old East Slavic",
@@ -80,9 +61,7 @@ DONOR_FAMILY: dict[str, str] = {
     "Slavic":         "Indo-European/Slavic",
 }
 
-# ─── Swadesh list — authoritative native Slavic words ─────────────────────────
-# Source: standard 207-item Swadesh list for Russian (Swadesh 1952).
-# All items are unambiguously Indo-European / native East Slavic vocabulary.
+# Swadesh 207-item list for Russian — unambiguously native East Slavic vocabulary
 
 SWADESH_NATIVE: list[str] = [
     "я", "ты", "он", "мы", "вы", "они",
@@ -139,30 +118,28 @@ SWADESH_NATIVE: list[str] = [
     "правый", "левый", "прямой",
 ]
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+SEP = "-" * 62
 
-W = 62
 
 def banner(title: str) -> None:
-    print(); print("╔" + "═" * W + "╗")
-    print("║" + title.center(W) + "║")
-    print("╚" + "═" * W + "╝")
+    print(f"\n{SEP}\n  {title}\n{SEP}")
+
 
 def section(title: str) -> None:
-    print(); print("─" * W); print(f"  {title}"); print("─" * W)
+    print(f"\n  {title}")
+    print(f"  {'─' * (len(title) + 2)}")
 
-def ok(msg: str)   -> None: print(f"  ✓  {msg}")
+
+def ok(msg: str)   -> None: print(f"  {msg}")
 def info(msg: str) -> None: print(f"     {msg}")
-def warn(msg: str) -> None: print(f"  ⚠  {msg}")
-
-# ─── Wiktionary fetcher ───────────────────────────────────────────────────────
+def warn(msg: str) -> None: print(f"  [WARNING] {msg}")
 
 def _get_with_backoff(
     session: requests.Session,
     params: dict,
     attempt: int = 0,
 ) -> dict | None:
-    """GET request with exponential backoff on 429 / network errors."""
+    """GET with exponential backoff on 429 / network errors."""
     wait = REQUEST_DELAY * (2 ** attempt)
     time.sleep(wait)
     try:
@@ -235,8 +212,6 @@ def category_exists(category: str, session: requests.Session) -> bool:
         return False
     return bool(data.get("query", {}).get("categorymembers"))
 
-# ─── Word validation ──────────────────────────────────────────────────────────
-
 _CYRILLIC_ONLY = re.compile(r"^[а-яёА-ЯЁ\-]+$")
 
 def is_valid_word(word: str) -> bool:
@@ -255,16 +230,12 @@ def is_valid_word(word: str) -> bool:
 
 
 def morph_is_lemma(word: str) -> bool:
-    """
-    Return True if pymorphy3 agrees this is a normal form (lemma) of itself,
-    OR if pymorphy3 doesn't know the word at all (likely a new borrowing).
-    """
+    """True if pymorphy3 considers this the normal form, or if the word is unknown."""
     morph = analyze_word(word)
     if not morph.get("is_known", True):
         return True   # unknown word — keep it (probably a new loanword)
     return morph.get("lemma", word).lower() == word.lower()
 
-# ─── Row builders ─────────────────────────────────────────────────────────────
 
 def build_loanword_rows(
     words: list[str],
@@ -313,25 +284,21 @@ def build_native_rows(existing_words: set[str]) -> list[dict]:
         existing_words.add(w)
     return rows
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
-
 def main(limit: int, dry_run: bool) -> None:
-    banner("WordRoute — Wiktionary Dataset Builder")
+    banner("WordRoute — Dataset Builder")
 
-    # ── Load existing dataset ──────────────────────────────────────────────────
-    section("EXISTING DATASET")
+    section("Existing dataset")
     df_existing = pd.read_csv(DATA_PATH)
     existing_words: set[str] = set(df_existing["word"].str.lower())
     info(f"Loaded {len(df_existing)} existing words (will skip duplicates)")
 
-    # ── Fetch from Wiktionary ──────────────────────────────────────────────────
     session = requests.Session()
     session.headers["User-Agent"] = "WordRoute/1.0 (NLP educational project; contact via GitHub)"
 
     new_rows: list[dict] = []
     fetch_stats: dict[str, int] = {}
 
-    section(f"FETCHING FROM WIKTIONARY  (up to {limit} words per donor language)")
+    section(f"Fetching from Wiktionary  (up to {limit} per language)")
 
     for donor_lang, categories in CATEGORY_GROUPS.items():
         collected: list[str] = []
@@ -358,12 +325,11 @@ def main(limit: int, dry_run: bool) -> None:
         fetch_stats[donor_lang] = len(rows)
 
         if rows:
-            ok(f"{donor_lang:<20} +{len(rows)} new words added")
+            ok(f"{donor_lang:<20} +{len(rows)} words")
         else:
-            warn(f"{donor_lang:<20} no new words found (all may already be in dataset)")
+            warn(f"{donor_lang:<20} no new words (already in dataset?)")
 
-    # ── Native words: Wiktionary inherited categories + Swadesh ───────────────
-    section("NATIVE WORDS  (Wiktionary inherited + Swadesh list)")
+    section("Native words  (Wiktionary inherited + Swadesh)")
 
     native_wikt: list[str] = []
     for cat in NATIVE_CATEGORIES:
@@ -403,10 +369,9 @@ def main(limit: int, dry_run: bool) -> None:
     new_rows.extend(swadesh_rows)
     fetch_stats["Slavic (Swadesh)"] = len(swadesh_rows)
 
-    ok(f"{'Slavic total':<20} +{len(wikt_native_rows) + len(swadesh_rows)} new native words")
+    ok(f"{'Slavic total':<20} +{len(wikt_native_rows) + len(swadesh_rows)} native words")
 
-    # ── Stats preview ─────────────────────────────────────────────────────────
-    section("RESULTS")
+    section("Results")
     total_new = len(new_rows)
     total_merged = len(df_existing) + total_new
 
@@ -421,19 +386,17 @@ def main(limit: int, dry_run: bool) -> None:
 
     if dry_run:
         print()
-        warn("DRY RUN — no files written. Remove --dry-run to save.")
+        warn("dry run — no files written")
         return
 
     if total_new == 0:
-        warn("Nothing new to add. Dataset unchanged.")
+        warn("nothing new to add, dataset unchanged")
         return
 
-    # ── Backup original ───────────────────────────────────────────────────────
     import shutil
     shutil.copy(DATA_PATH, BACKUP_PATH)
-    ok(f"Backup saved to {BACKUP_PATH.name}")
+    ok(f"backup: {BACKUP_PATH.name}")
 
-    # ── Merge and save ────────────────────────────────────────────────────────
     df_new = pd.DataFrame(new_rows, columns=[
         "word", "lemma", "is_loanword", "donor_language",
         "donor_family", "source_word", "semantic_domain", "confidence",
@@ -442,17 +405,14 @@ def main(limit: int, dry_run: bool) -> None:
     df_merged = df_merged.drop_duplicates(subset="word", keep="first")
     df_merged.to_csv(DATA_PATH, index=False)
 
-    ok(f"Dataset saved: {len(df_merged)} words → {DATA_PATH.name}")
+    ok(f"saved: {len(df_merged)} words -> {DATA_PATH.name}")
 
-    # ── Donor distribution after merge ────────────────────────────────────────
-    section("FINAL DONOR DISTRIBUTION")
+    section("Donor distribution after merge")
     donor_counts = df_merged["donor_language"].value_counts()
     for lang, cnt in donor_counts.items():
-        bar = "▓" * int(cnt / donor_counts.max() * 20)
+        bar = "#" * int(cnt / donor_counts.max() * 20)
         print(f"  {lang:<24} {cnt:>4}  {bar}")
 
-    print()
-    ok("Done. Run 'python train.py' to retrain models on the expanded dataset.")
     print()
 
 

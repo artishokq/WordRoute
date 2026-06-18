@@ -54,4 +54,4 @@ export interface AnalyzeResponse {
   stats: AnalysisStats;
 }
 
-export type AnalysisMode = "word" | "text" | "batch";
+export type AnalysisMode = "word" | "text";

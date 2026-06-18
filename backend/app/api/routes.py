@@ -1,4 +1,3 @@
-"""FastAPI routes for WordRoute analysis API."""
 from __future__ import annotations
 from collections import Counter
 
@@ -103,7 +102,6 @@ def _build_stats(words: list[WordResult], input_text: str) -> AnalysisStats:
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(body: AnalyzeRequest):
-    """Analyze Russian text for borrowings."""
     clf = get_classifier()
     if not clf.trained:
         raise HTTPException(status_code=503, detail="Classifier not ready")
@@ -113,11 +111,9 @@ async def analyze(body: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="Input text is empty")
 
     if body.mode == "word":
-        # Single word or comma-separated list treated as individual words
         raw_words = [w.strip() for w in text.replace(",", " ").split() if w.strip()]
         words_to_analyze = raw_words[:100]
     else:
-        # Full text preprocessing
         tokens = preprocess_text(text, keep_all_pos=False)
         words_to_analyze = [t["token"] for t in tokens][:200]
 
@@ -129,11 +125,9 @@ async def analyze(body: AnalyzeRequest):
         try:
             result = _analyze_single(word)
             results.append(result)
-        except Exception as exc:
-            # Skip problematic words instead of failing entire request
+        except Exception:
             continue
 
-    # Sort: borrowings first, then by probability descending
     results.sort(key=lambda r: (-int(r.is_loanword), -r.loanword_probability))
 
     stats = _build_stats(results, text)
@@ -148,7 +142,6 @@ async def analyze(body: AnalyzeRequest):
 
 @router.get("/word/{word}", response_model=WordResult)
 async def analyze_word(word: str):
-    """Analyze a single word."""
     clf = get_classifier()
     if not clf.trained:
         raise HTTPException(status_code=503, detail="Classifier not ready")

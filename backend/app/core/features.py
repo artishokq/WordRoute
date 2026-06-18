@@ -38,24 +38,46 @@ def _min_lev_normalized(word_translit: str, donor_words: list[str], max_check: i
 
 # Borrowing-indicator suffix patterns (Cyrillic)
 SUFFIX_PATTERNS: dict[str, list[str]] = {
-    "ing": ["инг"],
-    "tsiya": ["ция"],
-    "izm": ["изм"],
-    "ist": ["ист"],
-    "ment": ["мент"],
+    "ing":    ["инг"],
+    "tsiya":  ["ция"],
+    "izm":    ["изм"],
+    "ist":    ["ист"],
+    "ment":   ["мент"],
     "er_end": ["ер"],
-    "azh": ["аж"],
+    "azh":    ["аж"],
     "or_end": ["ор"],
-    "tor": ["тор"],
-    "siya": ["сия"],
-    "iya": ["ия"],
-    "ika": ["ика"],
+    "tor":    ["тор"],
+    "siya":   ["сия"],
+    "iya":    ["ия"],
+    "ika":    ["ика"],
     "atsiya": ["ация"],
-    "al": ["аль"],
+    "al":     ["аль"],
+}
+
+# Native Slavic suffix patterns — evidence AGAINST borrowing
+# These are highly productive native derivational morphemes
+NATIVE_SUFFIX_PATTERNS: dict[str, list[str]] = {
+    "sfx_ost":    ["ость", "есть"],               # радость, смелость, верность
+    "sfx_nost":   ["ность"],                       # верность, сложность (subset of ost)
+    "sfx_enie":   ["ение", "ание", "яние"],        # движение, желание, знание
+    "sfx_stvo":   ["ство", "ество"],               # богатство, братство
+    "sfx_nik":    ["ник", "ница"],                 # работник, ученица
+    "sfx_tel":    ["тель"],                        # учитель, писатель
+    "sfx_ny_adj": ["ный", "ной", "ная", "ное",
+                   "ний", "няя", "нее"],           # белый, добрый, синий
+    "sfx_ovy":    ["овый", "евый", "овой", "евой"], # дубовый, весенний
+}
+
+# Germanic-language discriminators (шт/шн/шп clusters are >95% German loans)
+GERMANIC_CLUSTERS = {
+    "has_sht": "шт",   # Sturm→шторм, штраф, Staat→штат
+    "has_shn": "шн",   # Schnur→шнур, шницель
+    "has_shp": "шп",   # Spion→шпион, шпага
+    "has_shv": "шв",   # Schwarz→шварц
 }
 
 LETTER_PATTERNS: dict[str, str] = {
-    "has_f": "ф",
+    "has_f":  "ф",
     "has_dj": "дж",
     "has_ae": "аэ",
 }
@@ -75,20 +97,38 @@ def extract_features(word: str, lemma: str, morph: dict) -> dict[str, float]:
 
     feats: dict[str, float] = {}
 
-    # ── length features ────────────────────────────────────────────────────────
+    # length
     feats["len_word"] = len(w)
     feats["num_vowels"] = count_vowels(w)
     feats["vowel_ratio"] = count_vowels(w) / max(len(w), 1)
 
-    # ── suffix / pattern features ──────────────────────────────────────────────
+    # borrowing suffix patterns
     for feat_name, suffixes in SUFFIX_PATTERNS.items():
         feats[f"sfx_{feat_name}"] = _check_suffix(w, suffixes)
 
-    # special: -ер only at end AND not preceded by a typical native cluster
-    native_er = {"вечер", "ветер", "шкафер", "тетерев"}
+    native_er = {"вечер", "ветер", "тетерев"}
     feats["sfx_er_end"] = int(w.endswith("ер") and w not in native_er)
 
-    # ── letter presence features ───────────────────────────────────────────────
+    # native Slavic suffix patterns (evidence against borrowing)
+    for feat_name, suffixes in NATIVE_SUFFIX_PATTERNS.items():
+        feats[feat_name] = _check_suffix(w, suffixes)
+
+    # Germanic cluster patterns (шт/шн/шп are almost exclusively German loans)
+    for feat_name, cluster in GERMANIC_CLUSTERS.items():
+        feats[feat_name] = int(cluster in w)
+
+    # French: vowel + ёр/ер (актёр, суфлёр)
+    feats["sfx_eur"] = int(
+        (w.endswith("ёр") or w.endswith("ер"))
+        and len(w) > 3
+        and w[-3] in "аеёиоуыэюя"
+    )
+    # English: -мен (бизнесмен, джентльмен)
+    feats["sfx_men"] = int(w.endswith("мен") and len(w) > 4)
+    # French/Italian: -ир (командир, сувенир)
+    feats["sfx_ir"] = int(w.endswith("ир") and len(w) > 3)
+
+    # letter patterns
     feats["has_f"] = int("ф" in w)
     feats["has_dj"] = int("дж" in w)
     feats["has_ae"] = int("аэ" in w or "эа" in w)
@@ -97,7 +137,7 @@ def extract_features(word: str, lemma: str, morph: dict) -> dict[str, float]:
         any(w[i] == w[i + 1] for i in range(len(w) - 1) if w[i] in "аеёиоуы")
     )
 
-    # ── morphological features ─────────────────────────────────────────────────
+    # morphological features from pymorphy3
     pos = morph.get("POS", "UNKN")
     feats["pos_noun"] = int(pos == "NOUN")
     feats["pos_adj"] = int(pos in ("ADJF", "ADJS"))
@@ -108,16 +148,14 @@ def extract_features(word: str, lemma: str, morph: dict) -> dict[str, float]:
     feats["gender_neut"] = int(morph.get("gender") == "neut")
     feats["gender_masc"] = int(morph.get("gender") == "masc")
 
-    # ── Levenshtein to donor dictionaries ─────────────────────────────────────
+    # Levenshtein distance to donor word lists
     for lang in DONOR_LANGUAGES:
         donor_words = _load_donor_words(lang)
-        key = f"lev_{lang}"
-        feats[key] = _min_lev_normalized(translit, donor_words)
+        feats[f"lev_{lang}"] = _min_lev_normalized(translit, donor_words)
 
-    # ── derived: best donor match score ───────────────────────────────────────
     lev_scores = {lang: feats[f"lev_{lang}"] for lang in DONOR_LANGUAGES}
     feats["lev_best"] = min(lev_scores.values())
-    feats["lev_en_vs_native"] = feats["lev_english"] - 0.5  # centered
+    feats["lev_en_vs_native"] = feats["lev_english"] - 0.5
 
     return feats
 

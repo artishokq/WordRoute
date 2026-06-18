@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "WordRoute — анализ заимствований в русском языке",
+  title: "WordRoute – анализ заимствований в русском языке",
   description:
     "NLP-инструмент для выявления и анализа лексических заимствований в русском языке",
 };
@@ -49,8 +49,7 @@ export default function RootLayout({
           className="border-t mt-16 px-6 py-4 text-center text-sm"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
         >
-          WordRoute · NLP-инструмент для анализа заимствований в русском языке ·{" "}
-          <span style={{ color: "var(--accent)" }}>Computational Linguistics Project</span>
+          WordRoute · NLP-инструмент для анализа заимствований в русском языке
         </footer>
       </body>
     </html>

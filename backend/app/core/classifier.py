@@ -33,7 +33,7 @@ DONOR_LABEL_MAP = {
     "Arabic/Persian": "Arabic/Persian",
     "Turkic":         "Turkic",
     "Italian":        "Italian",
-    "Dutch":          "Dutch",
+    "Dutch":          "German",   # Dutch/German share Germanic phonetics in Russian
     "Slavic":         "Slavic",
 }
 
@@ -50,8 +50,6 @@ class BorrowingClassifier:
         self._seed_lookup: dict[str, dict] = {}
         self.trained     = False
         self._source     = "none"   # "cache" | "trained"
-
-    # ── Loading ───────────────────────────────────────────────────────────────
 
     def _all_artefacts_exist(self) -> bool:
         return all((MODEL_DIR / f"{n}.joblib").exists() for n in _ARTEFACT_NAMES)
@@ -73,8 +71,6 @@ class BorrowingClassifier:
         except Exception as exc:
             print(f"[classifier] Cache load failed: {exc}. Falling back to training.")
             return False
-
-    # ── Fallback training (used when cache is missing) ────────────────────────
 
     def _load_seed_dataset(self) -> pd.DataFrame:
         df = pd.read_csv(DATA_DIR / "seed_dataset.csv")
@@ -104,7 +100,7 @@ class BorrowingClassifier:
             self._seed_lookup[str(row["lemma"]).lower()] = entry
 
     def _train_fallback(self) -> None:
-        """Minimal training used when no saved artefacts are available."""
+        """Training fallback when no saved artefacts exist."""
         df = self._load_seed_dataset()
         self._build_seed_lookup(df)
         self.feature_names = get_feature_names()
@@ -135,8 +131,6 @@ class BorrowingClassifier:
         print(f"[classifier] Fallback training done on {len(df)} words. "
               "Run 'python train.py' for full training with CatBoost.")
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     def train(self) -> None:
         """Load from cache or fall back to in-process training."""
         if not self._load_from_cache():
@@ -150,7 +144,6 @@ class BorrowingClassifier:
         morph      = analyze_word(word_lower)
         lemma      = morph.get("lemma", word_lower)
 
-        # Ground-truth lookup from seed dataset
         seed_entry = (self._seed_lookup.get(word_lower)
                       or self._seed_lookup.get(lemma))
 
@@ -158,11 +151,9 @@ class BorrowingClassifier:
         vec   = features_to_vector(feats)
         X     = np.array([vec])
 
-        # L1
         l1_proba      = self.l1_model.predict_proba(X)[0]
         loanword_prob = float(l1_proba[1])
 
-        # L2
         l2_proba  = self.l2_model.predict_proba(X)[0]
         classes   = self.le.classes_
         top_donors = sorted(
@@ -204,8 +195,6 @@ class BorrowingClassifier:
 
         return result
 
-
-# ── Singleton ─────────────────────────────────────────────────────────────────
 
 _classifier: BorrowingClassifier | None = None
 

@@ -1,5 +1,4 @@
-"""Data enrichment: Glottolog info, morphological derivatives."""
-from __future__ import annotations
+"""Glottolog lookup and morphological derivative generation."""
 import json
 from pathlib import Path
 import pymorphy3
@@ -20,7 +19,6 @@ def _load_glottolog() -> dict:
 
 
 def get_glottolog_info(donor_language: str) -> dict:
-    """Return Glottolog metadata for the given donor language."""
     data = _load_glottolog()
     for key, val in data.items():
         if key.lower() == donor_language.lower():
@@ -29,55 +27,42 @@ def get_glottolog_info(donor_language: str) -> dict:
 
 
 def get_morphological_derivatives(lemma: str) -> list[str]:
-    """
-    Attempt to find common derivative forms in Russian.
-    Uses simple suffix-based heuristics.
-    """
+    """Suffix-based heuristic to suggest common derivative forms."""
     lemma = lemma.lower().strip()
     derivatives: list[str] = []
 
-    # For nouns ending in -инг → try -инговый (adjective)
     if lemma.endswith("инг"):
         base = lemma[:-3]
         derivatives.append(f"{base}инговый")
         derivatives.append(f"{base}ингом")
 
-    # For nouns ending in -ция → try -ционный
     if lemma.endswith("ция"):
         base = lemma[:-3]
         derivatives.append(f"{base}ционный")
         derivatives.append(f"{base}циям")
 
-    # For nouns ending in -изм → try -ист
     if lemma.endswith("изм"):
         base = lemma[:-3]
         derivatives.append(f"{base}ист")
         derivatives.append(f"{base}истский")
 
-    # For nouns ending in -ер → try -ерский, -ерство
     if lemma.endswith("ер"):
         derivatives.append(f"{lemma}ский")
         derivatives.append(f"{lemma}ство")
 
-    # For nouns ending in -ент → try -ентный
     if lemma.endswith("ент"):
         derivatives.append(f"{lemma}ный")
 
-    # For nouns ending in consonant → try -овый (adjective), -ировать (verb)
     cyrillic_consonants = "бвгджзйклмнпрстфхцчшщ"
     if lemma and lemma[-1] in cyrillic_consonants:
-        # verbal derivative
-        verb_candidate = f"{lemma}ировать"
-        derivatives.append(verb_candidate)
+        derivatives.append(f"{lemma}ировать")
 
-    # Validate: only return forms that pymorphy2 considers valid Russian words
     validated = []
     for d in derivatives:
         parses = morph.parse(d)
         if parses and parses[0].is_known:
             validated.append(d)
         elif d not in validated:
-            # include even if not in dict — it might be a real word
             if len(validated) < 4:
                 validated.append(d)
 
@@ -93,7 +78,6 @@ def get_word_card(
     derivatives: list[str],
     explanation: list[str],
 ) -> dict:
-    """Assemble the complete word card response."""
     from .explainer import get_semantic_domain_label, DONOR_LANG_DISPLAY
 
     donor_lang = prediction.get("donor_language", "Unknown")
