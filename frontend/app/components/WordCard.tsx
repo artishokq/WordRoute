@@ -226,26 +226,6 @@ export default function WordCard({ word, onClose }: Props) {
             </div>
           )}
 
-          {/* Morphological derivatives */}
-          {word.morphological_derivatives.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-secondary)" }}>
-                Морфологическая адаптация
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {word.morphological_derivatives.map((d) => (
-                  <span
-                    key={d}
-                    className="text-sm px-2.5 py-1 rounded-lg font-mono"
-                    style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}
-                  >
-                    {d}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Explanation */}
           {word.explanation.length > 0 && (
             <div>
