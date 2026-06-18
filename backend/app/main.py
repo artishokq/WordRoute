@@ -30,6 +30,7 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup():
+    """Pre-load the classifier so the first request is not slow."""
     print("[startup] loading classifier...")
     clf = get_classifier()
     print(f"[startup] ready, trained={clf.trained}")
@@ -37,4 +38,5 @@ async def startup():
 
 @app.get("/")
 async def root():
+    """Return basic API identity information."""
     return {"name": "WordRoute API", "version": "1.0.0", "docs": "/docs"}

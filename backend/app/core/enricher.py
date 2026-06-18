@@ -11,6 +11,7 @@ _glottolog_cache: dict | None = None
 
 
 def _load_glottolog() -> dict:
+    """Load and cache the Glottolog metadata JSON on first call."""
     global _glottolog_cache
     if _glottolog_cache is None:
         path = DATA_DIR / "glottolog_info.json"
@@ -19,6 +20,7 @@ def _load_glottolog() -> dict:
 
 
 def get_glottolog_info(donor_language: str) -> dict:
+    """Return the Glottolog metadata dict for *donor_language*, or {} if not found."""
     data = _load_glottolog()
     for key, val in data.items():
         if key.lower() == donor_language.lower():
@@ -78,6 +80,7 @@ def get_word_card(
     derivatives: list[str],
     explanation: list[str],
 ) -> dict:
+    """Assemble the complete word card dict returned to the API layer."""
     from .explainer import get_semantic_domain_label, DONOR_LANG_DISPLAY
 
     donor_lang = prediction.get("donor_language", "Unknown")

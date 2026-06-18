@@ -19,6 +19,10 @@ VOWELS = set("аеёиоуыэюя")
 
 
 def transliterate(word: str) -> str:
+    """Transliterate a Russian word to its Latin phonetic equivalent.
+
+    Used before computing Levenshtein distances to donor-language word lists.
+    """
     table = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d",
         "е": "e", "ё": "yo", "ж": "zh", "з": "z", "и": "i",
@@ -32,10 +36,16 @@ def transliterate(word: str) -> str:
 
 
 def count_vowels(word: str) -> int:
+    """Return the count of Russian vowels in *word*."""
     return sum(1 for c in word.lower() if c in VOWELS)
 
 
 def analyze_word(word: str) -> dict:
+    """Run pymorphy3 on *word* and return a flat morphological info dict.
+
+    Keys: lemma, POS, gender, number, case, animacy, is_known, declinable, score.
+    Returns a minimal fallback dict for unknown words.
+    """
     parses = morph.parse(word)
     if not parses:
         return {"lemma": word, "POS": "UNKN", "is_known": False, "declinable": True}
@@ -66,11 +76,17 @@ def analyze_word(word: str) -> dict:
 
 
 def tokenize(text: str) -> list[str]:
+    """Extract lowercase Russian tokens (length >= 2) from arbitrary text."""
     tokens = re.findall(r"[а-яёА-ЯЁ]+(?:-[а-яёА-ЯЁ]+)*", text)
     return [t.lower() for t in tokens if len(t) >= 2]
 
 
 def preprocess_text(text: str, keep_all_pos: bool = False) -> list[dict]:
+    """Tokenize text and return morphological info for content words.
+
+    Deduplicates by lemma and filters stop words. Set *keep_all_pos* to True
+    to skip POS filtering.
+    """
     tokens = tokenize(text)
     results = []
     seen_lemmas: set[str] = set()
@@ -96,6 +112,7 @@ def preprocess_text(text: str, keep_all_pos: bool = False) -> list[dict]:
 
 
 def preprocess_word(word: str) -> dict:
+    """Analyze a single word and attach it as ``token`` in the returned dict."""
     word = word.strip().lower()
     info = analyze_word(word)
     info["token"] = word

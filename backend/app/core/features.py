@@ -13,6 +13,7 @@ _donor_cache: dict[str, list[str]] = {}
 
 
 def _load_donor_words(lang: str) -> list[str]:
+    """Load and cache the word list for *lang* from donor_words/<lang>.txt."""
     if lang in _donor_cache:
         return _donor_cache[lang]
     path = DATA_DIR / f"{lang}.txt"
@@ -84,6 +85,7 @@ LETTER_PATTERNS: dict[str, str] = {
 
 
 def _check_suffix(word: str, suffixes: list[str]) -> int:
+    """Return 1 if *word* ends with any of *suffixes*, else 0."""
     return int(any(word.endswith(s) for s in suffixes))
 
 

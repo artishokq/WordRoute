@@ -22,7 +22,7 @@ from sklearn.pipeline import Pipeline
 from .features import extract_features, features_to_vector, get_feature_names
 from .preprocessor import analyze_word
 
-DATA_DIR  = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
 MODEL_DIR = Path(__file__).parent.parent.parent / "models_cache"
 
 DONOR_LABEL_MAP = {
@@ -42,16 +42,19 @@ _ARTEFACT_NAMES = ["l1_model", "l2_model", "label_encoder",
 
 
 class BorrowingClassifier:
+    """Two-level borrowing classifier: L1 binary + L2 multi-class donor language."""
+
     def __init__(self) -> None:
-        self.l1_model    = None
-        self.l2_model    = None
-        self.le          = LabelEncoder()
+        self.l1_model = None
+        self.l2_model = None
+        self.le = LabelEncoder()
         self.feature_names: list[str] = []
         self._seed_lookup: dict[str, dict] = {}
-        self.trained     = False
-        self._source     = "none"   # "cache" | "trained"
+        self.trained = False
+        self._source = "none"  # "cache" | "trained"
 
     def _all_artefacts_exist(self) -> bool:
+        """Return True if every expected joblib artefact is present on disk."""
         return all((MODEL_DIR / f"{n}.joblib").exists() for n in _ARTEFACT_NAMES)
 
     def _load_from_cache(self) -> bool:
@@ -59,13 +62,13 @@ class BorrowingClassifier:
         if not self._all_artefacts_exist():
             return False
         try:
-            self.l1_model       = joblib.load(MODEL_DIR / "l1_model.joblib")
-            self.l2_model       = joblib.load(MODEL_DIR / "l2_model.joblib")
-            self.le             = joblib.load(MODEL_DIR / "label_encoder.joblib")
-            self.feature_names  = joblib.load(MODEL_DIR / "feature_names.joblib")
-            self._seed_lookup   = joblib.load(MODEL_DIR / "seed_lookup.joblib")
-            self.trained        = True
-            self._source        = "cache"
+            self.l1_model = joblib.load(MODEL_DIR / "l1_model.joblib")
+            self.l2_model = joblib.load(MODEL_DIR / "l2_model.joblib")
+            self.le = joblib.load(MODEL_DIR / "label_encoder.joblib")
+            self.feature_names = joblib.load(MODEL_DIR / "feature_names.joblib")
+            self._seed_lookup = joblib.load(MODEL_DIR / "seed_lookup.joblib")
+            self.trained = True
+            self._source = "cache"
             print("[classifier] Loaded from cache (models_cache/).")
             return True
         except Exception as exc:
@@ -73,12 +76,14 @@ class BorrowingClassifier:
             return False
 
     def _load_seed_dataset(self) -> pd.DataFrame:
+        """Read seed_dataset.csv and return a cleaned DataFrame."""
         df = pd.read_csv(DATA_DIR / "seed_dataset.csv")
         df = df.dropna(subset=["word", "lemma", "is_loanword"])
         df["is_loanword"] = df["is_loanword"].astype(int)
         return df
 
     def _build_feature_matrix(self, df: pd.DataFrame) -> np.ndarray:
+        """Extract the 54-feature vector for every row in *df* and stack into a matrix."""
         rows = []
         for _, row in df.iterrows():
             morph = analyze_word(str(row["lemma"]))
@@ -87,16 +92,17 @@ class BorrowingClassifier:
         return np.array(rows, dtype=float)
 
     def _build_seed_lookup(self, df: pd.DataFrame) -> None:
+        """Populate _seed_lookup keyed by both surface form and lemma (lowercased)."""
         for _, row in df.iterrows():
             entry = {
-                "is_loanword":     int(row["is_loanword"]),
-                "donor_language":  str(row.get("donor_language", "Unknown")),
-                "donor_family":    str(row.get("donor_family", "")),
-                "source_word":     str(row.get("source_word", "")),
+                "is_loanword": int(row["is_loanword"]),
+                "donor_language": str(row.get("donor_language", "Unknown")),
+                "donor_family": str(row.get("donor_family", "")),
+                "source_word": str(row.get("source_word", "")),
                 "semantic_domain": str(row.get("semantic_domain", "")),
-                "confidence":      float(row.get("confidence", 0.5)),
+                "confidence": float(row.get("confidence", 0.5)),
             }
-            self._seed_lookup[str(row["word"]).lower()]  = entry
+            self._seed_lookup[str(row["word"]).lower()] = entry
             self._seed_lookup[str(row["lemma"]).lower()] = entry
 
     def _train_fallback(self) -> None:
@@ -137,25 +143,30 @@ class BorrowingClassifier:
             self._train_fallback()
 
     def predict(self, word: str) -> dict:
+        """Run L1 + L2 inference for *word* and return a unified result dict.
+
+        If the word is in the seed lookup its verified labels override the model
+        outputs and top_donors is reduced to the single confirmed donor.
+        """
         if not self.trained:
             raise RuntimeError("Classifier not trained. Call train() first.")
 
         word_lower = word.lower().strip()
-        morph      = analyze_word(word_lower)
-        lemma      = morph.get("lemma", word_lower)
+        morph = analyze_word(word_lower)
+        lemma = morph.get("lemma", word_lower)
 
         seed_entry = (self._seed_lookup.get(word_lower)
                       or self._seed_lookup.get(lemma))
 
         feats = extract_features(word_lower, lemma, morph)
-        vec   = features_to_vector(feats)
-        X     = np.array([vec])
+        vec = features_to_vector(feats)
+        X = np.array([vec])
 
-        l1_proba      = self.l1_model.predict_proba(X)[0]
+        l1_proba = self.l1_model.predict_proba(X)[0]
         loanword_prob = float(l1_proba[1])
 
-        l2_proba  = self.l2_model.predict_proba(X)[0]
-        classes   = self.le.classes_
+        l2_proba = self.l2_model.predict_proba(X)[0]
+        classes = self.le.classes_
         top_donors = sorted(
             [{"language": cls, "probability": float(p)}
              for cls, p in zip(classes, l2_proba)],
@@ -165,33 +176,38 @@ class BorrowingClassifier:
         top_donor = top_donors[0]["language"] if top_donors else "Unknown"
 
         result: dict = {
-            "word":            word,
-            "lemma":           lemma,
-            "pos":             morph.get("POS", "UNKN"),
-            "gender":          morph.get("gender"),
-            "number":          morph.get("number"),
+            "word": word,
+            "lemma": lemma,
+            "pos": morph.get("POS", "UNKN"),
+            "gender": morph.get("gender"),
+            "number": morph.get("number"),
             "is_known_to_morph": morph.get("is_known", True),
-            "is_declinable":   morph.get("declinable", True),
+            "is_declinable": morph.get("declinable", True),
             "loanword_probability": round(loanword_prob, 3),
-            "is_loanword":     loanword_prob >= 0.5,
-            "donor_language":  top_donor,
-            "top_donors":      top_donors,
-            "features":        feats,
-            "donor_family":    "",
-            "source_word":     "",
+            "is_loanword": loanword_prob >= 0.5,
+            "donor_language": top_donor,
+            "top_donors": top_donors,
+            "features": feats,
+            "donor_family": "",
+            "source_word": "",
             "semantic_domain": "",
-            "in_seed":         False,
+            "in_seed": False,
         }
 
         if seed_entry:
+            seed_donor = (seed_entry["donor_language"]
+                          if seed_entry["is_loanword"] else "Slavic")
             result["loanword_probability"] = seed_entry["confidence"]
-            result["is_loanword"]          = bool(seed_entry["is_loanword"])
-            result["donor_language"]       = (seed_entry["donor_language"]
-                                               if seed_entry["is_loanword"] else "Slavic")
-            result["donor_family"]         = seed_entry["donor_family"]
-            result["source_word"]          = seed_entry["source_word"]
-            result["semantic_domain"]      = seed_entry["semantic_domain"]
-            result["in_seed"]              = True
+            result["is_loanword"] = bool(seed_entry["is_loanword"])
+            result["donor_language"] = seed_donor
+            result["donor_family"] = seed_entry["donor_family"]
+            result["source_word"] = seed_entry["source_word"]
+            result["semantic_domain"] = seed_entry["semantic_domain"]
+            result["in_seed"] = True
+            # For seed words the donor language is verified — show only that entry.
+            # Mixing seed confidence (L1 scale) with L2 model probabilities produces
+            # numbers that sum above 100%, which is misleading.
+            result["top_donors"] = [{"language": seed_donor, "probability": 1.0}]
 
         return result
 
@@ -200,6 +216,7 @@ _classifier: BorrowingClassifier | None = None
 
 
 def get_classifier() -> BorrowingClassifier:
+    """Return the process-level singleton classifier, initialising it on first call."""
     global _classifier
     if _classifier is None:
         _classifier = BorrowingClassifier()

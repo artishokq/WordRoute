@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api")
 
 
 def _analyze_single(word: str) -> WordResult:
+    """Run the full analysis pipeline for a single Russian word."""
     clf = get_classifier()
 
     morph = preprocess_word(word)
@@ -80,6 +81,7 @@ def _analyze_single(word: str) -> WordResult:
 
 
 def _build_stats(words: list[WordResult], input_text: str) -> AnalysisStats:
+    """Compute aggregate borrowing statistics over a list of analyzed words."""
     borrowings = [w for w in words if w.is_loanword]
     donor_counts: Counter = Counter(w.donor_language for w in borrowings)
     semantic_counts: Counter = Counter(

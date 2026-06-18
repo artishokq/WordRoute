@@ -16,9 +16,12 @@ export default function InputForm({ onSubmit, loading }: Props) {
   const [mode, setMode] = useState<AnalysisMode>("text");
   const [input, setInput] = useState("");
 
+  // Block Latin letters and digits — only Cyrillic text is accepted.
+  const hasInvalidInput = /[a-zA-Z0-9]/.test(input);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim()) onSubmit(input.trim(), mode);
+    if (input.trim() && !hasInvalidInput) onSubmit(input.trim(), mode);
   };
 
   const loadExample = () => setInput(EXAMPLES[mode]);
@@ -85,10 +88,18 @@ export default function InputForm({ onSubmit, loading }: Props) {
         </div>
       </div>
 
+      {/* Non-Russian warning */}
+      {hasInvalidInput && (
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          Введите текст только на русском языке — латиница и цифры не
+          поддерживаются.
+        </p>
+      )}
+
       {/* Submit */}
       <button
         type="submit"
-        disabled={loading || !input.trim()}
+        disabled={loading || !input.trim() || hasInvalidInput}
         className="w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-40"
         style={{
           background: "var(--accent)",
@@ -97,9 +108,24 @@ export default function InputForm({ onSubmit, loading }: Props) {
       >
         {loading ? (
           <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
+            <svg
+              className="animate-spin w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="rgba(255,255,255,0.3)"
+                strokeWidth="3"
+              />
+              <path
+                d="M12 2a10 10 0 0 1 10 10"
+                stroke="#fff"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
             </svg>
             Анализируем...
           </span>

@@ -65,6 +65,11 @@ def generate_explanation(
     source_word: str,
     in_seed: bool,
 ) -> list[str]:
+    """Build a list of human-readable Russian reasons for the borrowing prediction.
+
+    Returns up to 7 explanations drawn from suffix, letter, Levenshtein,
+    morphological, and seed-presence signals.
+    """
     reasons: list[str] = []
 
     if not feats:
@@ -78,7 +83,6 @@ def generate_explanation(
         if feats.get(key, 0) == 1:
             reasons.append(explanation)
 
-    lev_key = f"lev_{donor_language.lower().replace('/', '_').replace(' ', '_')}"
     lang_key_map = {
         "English": "lev_english",
         "French": "lev_french",
@@ -115,6 +119,7 @@ def generate_explanation(
 
 
 def get_semantic_domain_label(domain: str) -> str:
+    """Translate an English semantic domain key to a Russian display label."""
     translations = {
         "technology": "технологии",
         "business": "бизнес / экономика",
