@@ -1,0 +1,101 @@
+{
+  "English": {
+    "glottocode": "stan1293",
+    "family": "Indo-European",
+    "subfamily": "Germanic",
+    "macroarea": "Eurasia",
+    "latitude": 51.5,
+    "longitude": -0.1,
+    "country": "United Kingdom",
+    "iso639": "eng",
+    "description": "West Germanic language, global lingua franca, primary modern donor to Russian"
+  },
+  "French": {
+    "glottocode": "stan1290",
+    "family": "Indo-European",
+    "subfamily": "Romance",
+    "macroarea": "Eurasia",
+    "latitude": 48.9,
+    "longitude": 2.3,
+    "country": "France",
+    "iso639": "fra",
+    "description": "Romance language; major donor to Russian in 18–19th century (culture, fashion, cuisine)"
+  },
+  "German": {
+    "glottocode": "stan1295",
+    "family": "Indo-European",
+    "subfamily": "Germanic",
+    "macroarea": "Eurasia",
+    "latitude": 52.5,
+    "longitude": 13.4,
+    "country": "Germany",
+    "iso639": "deu",
+    "description": "West Germanic; significant donor under Peter I (military, crafts, science)"
+  },
+  "Greek/Latin": {
+    "glottocode": "anci1242",
+    "family": "Indo-European",
+    "subfamily": "Classical",
+    "macroarea": "Eurasia",
+    "latitude": 37.9,
+    "longitude": 23.7,
+    "country": "Greece/Italy",
+    "iso639": "grc",
+    "description": "Classical languages; primary source for scientific, religious and academic terminology"
+  },
+  "Arabic/Persian": {
+    "glottocode": "stan1318",
+    "family": "Afro-Asiatic / Indo-Iranian",
+    "subfamily": "Semitic / Iranian",
+    "macroarea": "Eurasia",
+    "latitude": 33.3,
+    "longitude": 44.4,
+    "country": "Iraq/Iran",
+    "iso639": "ara",
+    "description": "Semitic/Iranian languages; donors via trade and religion (Middle Ages, Silk Road)"
+  },
+  "Turkic": {
+    "glottocode": "turk1303",
+    "family": "Turkic",
+    "subfamily": "Common Turkic",
+    "macroarea": "Eurasia",
+    "latitude": 51.2,
+    "longitude": 51.4,
+    "country": "Kazakhstan/Turkey",
+    "iso639": "tur",
+    "description": "Turkic family; donor via Mongol period and steppe contact (military, trade, nomadic life)"
+  },
+  "Italian": {
+    "glottocode": "ital1282",
+    "family": "Indo-European",
+    "subfamily": "Romance",
+    "macroarea": "Eurasia",
+    "latitude": 41.9,
+    "longitude": 12.5,
+    "country": "Italy",
+    "iso639": "ita",
+    "description": "Romance language; donor especially in music, art, finance and military (16–18th century)"
+  },
+  "Dutch": {
+    "glottocode": "dutc1256",
+    "family": "Indo-European",
+    "subfamily": "Germanic",
+    "macroarea": "Eurasia",
+    "latitude": 52.4,
+    "longitude": 4.9,
+    "country": "Netherlands",
+    "iso639": "nld",
+    "description": "West Germanic; donor under Peter I (seafaring, navigation, shipbuilding)"
+  },
+  "Slavic": {
+    "glottocode": "slav1255",
+    "family": "Indo-European",
+    "subfamily": "Slavic",
+    "macroarea": "Eurasia",
+    "latitude": 55.7,
+    "longitude": 37.6,
+    "country": "Russia",
+    "iso639": "rus",
+    "description": "Native Slavic heritage; not a donor — origin language of the core Russian lexicon"
+  }
+}
