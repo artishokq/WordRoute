@@ -33,7 +33,7 @@ DONOR_LABEL_MAP = {
     "Arabic/Persian": "Arabic/Persian",
     "Turkic":         "Turkic",
     "Italian":        "Italian",
-    "Dutch":          "English",
+    "Dutch":          "Dutch",
     "Slavic":         "Slavic",
 }
 

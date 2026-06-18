@@ -12,3 +12,4 @@ joblib>=1.4.0
 catboost>=1.2.0
 sentence-transformers>=3.0.0
 matplotlib>=3.9.0
+requests>=2.32.0
